@@ -42,6 +42,4 @@ dev-dependencies = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/django_octo_aurora"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/django_octo_aurora/templates" = "django_octo_aurora/templates"
-"src/django_octo_aurora/migrations" = "django_octo_aurora/migrations"
+
