@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Aurora — {{ project_name|default:"Django Project" }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #05070d; color: #f8fafc; font-family: monospace; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
+    .hud { transition: opacity .2s; } .hud.hidden { opacity: 0; pointer-events: none; }
+    .box { position: fixed; background: rgba(9,13,24,.9); border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; font-size: 12px; }
+    .top { top: 16px; left: 16px; border-color: rgba(0,245,212,.4); }
+    .actions { top: 16px; right: 16px; display: flex; gap: 6px; }
+    .dpad { right: 16px; bottom: 82px; display: grid; grid-template-columns: repeat(3, 34px); gap: 4px; background: none; border: none; padding: 0; }
+    .bar { bottom: 16px; left: 16px; right: 16px; display: flex; align-items: center; gap: 12px; }
+    .info { left: 16px; bottom: 82px; border-color: #38bdf8; display: none; max-width: 280px; }
+    button { background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: bold 12px monospace; }
+    button:hover { border-color: #00f5d4; color: #00f5d4; }
+    input[type="range"] { flex: 1; accent-color: #00f5d4; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="hud" class="hud">
+    <div class="box top"><b style="color:#00f5d4">⚡ AURORA</b> // {{ project_name|default:"Django Topology" }}</div>
+    <div class="box actions">
+      <button onclick="zoom*=1.2">+</button><button onclick="zoom*=0.8">-</button>
+      <button onclick="camX=camY=0;zoom=1">Centro</button><button onclick="hud.classList.toggle('hidden')">Cinema (H)</button>
+    </div>
+    <div id="info" class="box info"></div>
+    <div class="box dpad">
+      <div></div><button onclick="camY+=80/zoom">↑</button><div></div>
+      <button onclick="camX+=80/zoom">←</button><button onclick="camX=camY=0;zoom=1">•</button><button onclick="camX-=80/zoom">→</button>
+      <div></div><button onclick="camY-=80/zoom">↓</button><div></div>
+    </div>
+    <div class="box bar">
+      <button id="play" onclick="togglePlay()">▶ Play</button>
+      <input id="slider" type="range" min="0" value="0">
+      <span id="msg" style="color:#38bdf8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px">Atual</span>
+    </div>
+  </div>
+  <script>
+    const DATA = {{ aurora_json|default:'{"project_name":"django-project","nodes":[{"id":".","name":"root","type":"dir","parent":null,"ext":"root"}],"timeline":[]}'|safe }};
+    const COLORS = { root: "#fff", dir: "#38bdf8", ".py": "#00f5d4", ".html": "#ff2a85", ".js": "#facc15", ".css": "#facc15", ".toml": "#a855f7", ".md": "#a855f7" };
+    const c = document.getElementById("c"), ctx = c.getContext("2d"), keys = {};
+    let w, h, camX = 0, camY = 0, zoom = 1, playing = false, idx = 0, last = 0, beams = [], drag = false, mx = 0, my = 0;
+
+    (window.onresize = () => { w = c.width = innerWidth; h = c.height = innerHeight; })();
+    const map = new Map(), kids = new Map();
+    DATA.nodes.forEach(n => {
+      Object.assign(n, { x: 0, y: 0, tx: 0, ty: 0, pulse: 0 });
+      map.set(n.id, n);
+      (kids.get(n.parent) || kids.set(n.parent, []).get(n.parent)).push(n);
+    });
+
+    (function layout(id, x, y, a0, a1, d) {
+      const n = map.get(id), list = kids.get(id) || [];
+      if (!n) return; n.tx = x; n.ty = y;
+      const step = (a1 - a0) / (list.length || 1), r = Math.max(90, 220 - d * 28);
+      list.forEach((k, i) => { const a = a0 + step * (i + .5); layout(k.id, x + Math.cos(a) * r, y + Math.sin(a) * r, a - step * .45, a + step * .45, d + 1); });
+    })(".", 0, 0, 0, Math.PI * 2, 0);
+
+    const rawTl = DATA.timeline || [];
+    const tl = rawTl.length ? rawTl : DATA.nodes.filter(n => n.id !== ".").map((n, i) => ({
+      date: "LIVE",
+      sha: `STEP-${String(i + 1).padStart(2, "0")}`,
+      message: `Mount ${n.id}`,
+      changes: [{ status: "A", path: n.id }]
+    }));
+
+    const slider = document.getElementById("slider"), msg = document.getElementById("msg");
+    if (tl.length) {
+      slider.max = idx = tl.length - 1;
+      slider.value = idx;
+      msg.textContent = `[${tl[idx].date}] ${tl[idx].sha} — ${tl[idx].message}`;
+    } else {
+      slider.disabled = true;
+    }
+
+    function stepCommit(i) {
+      if (!tl[i]) return;
+      msg.textContent = `[${tl[i].date}] ${tl[i].sha} — ${tl[i].message}`;
+      (tl[i].changes || []).forEach(ch => {
+        const t = map.get(ch.path);
+        if (t) {
+          t.pulse = 1;
+          beams.push({ x: t.x, y: t.y, life: 1, col: ch.status === "A" ? "#00f5d4" : "#ff2a85" });
+        }
+      });
+    }
+
+    slider.oninput = e => stepCommit(idx = +e.target.value);
+
+    function togglePlay() {
+      if (!tl.length) return;
+      playing = !playing;
+      play.textContent = playing ? "⏸" : "▶ Play";
+      if (playing && idx >= tl.length - 1) idx = 0;
+    }
+
+    function drawWatermark(isExport) {
+      ctx.save();
+      ctx.font = "bold 13px monospace";
+      ctx.fillStyle = "rgba(0,245,212,.75)";
+      ctx.textAlign = "right";
+      ctx.fillText("⚡ AURORA // Powered by Django-Octo", w - 24, isExport ? h - 24 : h - 72);
+      if (isExport) {
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillText(`ARCHITECTURE // ${(DATA.project_name || "DJANGO").toUpperCase()}`, 24, h - 24);
+      }
+      ctx.restore();
+    }
+
+    function exportPng() {
+      drawFrame(true);
+      const a = document.createElement("a");
+      a.download = `${DATA.project_name || "django"}-aurora.png`;
+      a.href = c.toDataURL("image/png");
+      a.click();
+    }
+
+    onkeydown = e => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase() === "h") hud.classList.toggle("hidden"); if (e.key === " ") { e.preventDefault(); togglePlay(); } };
+    onkeyup = e => keys[e.key.toLowerCase()] = false;
+    c.onwheel = e => { e.preventDefault(); zoom = Math.min(4, Math.max(.2, zoom * (e.deltaY < 0 ? 1.1 : .9))); };
+    c.onmousedown = e => {
+      drag = true; mx = e.clientX; my = e.clientY;
+      const wx = (e.clientX - w / 2) / zoom - camX, wy = (e.clientY - h / 2) / zoom - camY;
+      const hit = DATA.nodes.find(n => Math.hypot(n.x - wx, n.y - wy) < 12);
+      info.style.display = hit ? "block" : "none";
+      if (hit) info.innerHTML = `<b style="color:#00f5d4">${hit.name}</b><br><span style="color:#94a3b8">${hit.id}</span>` + (hit.meta?.lines ? `<br>Linhas: ${hit.meta.lines} | Classes: ${hit.meta.classes}` : "");
+    };
+    onmousemove = e => { if (drag) { camX += (e.clientX - mx) / zoom; camY += (e.clientY - my) / zoom; mx = e.clientX; my = e.clientY; } };
+    onmouseup = () => drag = false;
+
+    function drawFrame(isExport = false) {
+      ctx.fillStyle = "#05070d"; ctx.fillRect(0, 0, w, h);
+      ctx.save(); ctx.translate(w / 2 + camX * zoom, h / 2 + camY * zoom); ctx.scale(zoom, zoom);
+
+      DATA.nodes.forEach(n => {
+        n.x += (n.tx - n.x) * .1; n.y += (n.ty - n.y) * .1; n.pulse = Math.max(0, n.pulse - .02);
+        const p = map.get(n.parent);
+        if (p) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(n.x, n.y); ctx.strokeStyle = n.pulse ? "#00f5d4" : "rgba(56,189,248,.22)"; ctx.lineWidth = n.pulse ? 2 : 1; ctx.stroke(); }
+      });
+
+      beams = beams.filter(b => (b.life -= .03) > 0);
+      beams.forEach(b => { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(b.x, b.y); ctx.strokeStyle = b.col; ctx.globalAlpha = b.life; ctx.lineWidth = 2.5; ctx.stroke(); ctx.globalAlpha = 1; });
+
+      DATA.nodes.forEach(n => {
+        const col = COLORS[n.ext] || "#94a3b8", r = (n.type === "dir" ? 5 : 4) + n.pulse * 6;
+        ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 6.28); ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 14; ctx.fill(); ctx.shadowBlur = 0;
+        if (zoom > .85 || n.type === "dir" || n.pulse > .2) { ctx.fillStyle = "#e2e8f0"; ctx.font = "10px monospace"; ctx.fillText(n.name, n.x + r + 5, n.y + 3); }
+      });
+
+      ctx.restore();
+      drawWatermark(isExport);
+    }
+
+    requestAnimationFrame(function loop(now) {
+      if (keys.arrowup || keys.w) camY += 10 / zoom; if (keys.arrowdown || keys.s) camY -= 10 / zoom;
+      if (keys.arrowleft || keys.a) camX += 10 / zoom; if (keys.arrowright || keys.d) camX -= 10 / zoom;
+      if (playing && now - last > 350) { last = now; stepCommit(idx); slider.value = idx++; if (idx >= tl.length) togglePlay(); }
+      drawFrame(false);
+      requestAnimationFrame(loop);
+    });
+  </script>
+</body>
+</html>
+
