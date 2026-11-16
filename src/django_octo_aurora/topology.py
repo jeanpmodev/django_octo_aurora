@@ -20,12 +20,9 @@ INFRA_DIRS = {"tests", "features", "performance", ".github", "audits", "config"}
 
 
 def _classify_node(rel_path: str, name: str, is_dir: bool) -> str:
-    top = rel_path.split("/")
+    top = rel_path.split("/")[0]
     if top in INFRA_DIRS or name in BOILERPLATE_NAMES or "/migrations" in rel_path:
         return "infra"
-    if is_dir or name.endswith((".py", ".html", ".js", ".css")):
-        return "work"
-    return "infra"
 
 
 def _inspect_py(file_path: Path) -> dict:
