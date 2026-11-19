@@ -22,6 +22,7 @@
 [![Socket Badge](https://badge.socket.dev/pypi/package/django-octo-aurora/0.1.6?artifact_id=tar-gz)](https://badge.socket.dev/pypi/package/django-octo-aurora/0.1.6?artifact_id=tar-gz)
 [![codecov](https://codecov.io/gh/jeanpmodev/django_octo_aurora/graph/badge.svg?token=FO3B4DS2RH)](https://codecov.io/gh/jeanpmodev/django_octo_aurora)
 [![Documentation Status](https://readthedocs.org/projects/django-octo/badge/?version=latest)](https://django-octo.readthedocs.io/en/latest/aurora/)
+[![PyPkgScore](https://pypkgscore.onrender.com/badge/django_octo_aurora.svg)](https://pypkgscore.onrender.com/en/p/django_octo_aurora/)
 
 **django_octo_aurora** is a decoupled runtime software topology visualizer and interactive architecture showcase module under the **Django-Octo** ecosystem.
 
